@@ -1,0 +1,19 @@
+/node_modules
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.venv/
+
+# CSV di input e report generati (usa .gitkeep per tenere le cartelle)
+/input/*
+/output/*
+!/input/.gitkeep
+!/output/.gitkeep
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+scripts/__pycache__/

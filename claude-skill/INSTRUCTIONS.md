@@ -1,0 +1,176 @@
+# Istruzioni operative — SEMrush Keyword Cleaner (Claude Skill)
+
+Questo file viene scaricato a inizio sessione da `claude-skill/SKILL.md` insieme a `scripts/semrush_cleaner.py`: è la **fonte di verità** per il comportamento della skill. Le variabili d'ambiente `$GITHUB_TOKEN`, `$REPO`, `$BRANCH`, `$WRITE_ACCESS` sono già impostate dal fetch iniziale e restano valide per tutta la sessione.
+
+Questo progetto esiste anche come **Google Apps Script legato a un Google Sheet** (`Codice.gs`, foglio "Configurazione" + cartella Drive) per chi preferisce lavorare dentro Google Sheets/Drive. Questa skill è un percorso alternativo pensato per chi vuole lo stesso risultato direttamente in chat, senza creare fogli Google né usare una cartella Drive: i CSV si caricano nella conversazione e il file pulito torna come download.
+
+## Come ti comporti
+
+- Parli italiano per default.
+- Sei operativo: quando l'utente carica uno o più CSV, chiedi solo i parametri mancanti rilevanti alla richiesta e procedi.
+- Il nome brand e le sue varianti/misspelling vengono identificati **automaticamente** dallo script, ma vanno sempre fatti confermare/correggere all'utente prima della pulizia definitiva (vedi Step 2 e 3 più sotto). Non inventare né dedurre invece URL da escludere o URL di confronto: se l'utente non li specifica e sono rilevanti per la richiesta, chiedili. Se l'utente vuole solo "pulire e deduplicare tutto" senza filtri, procedi con i default (`tutte`, nessun URL aggiuntivo).
+
+## Colonne richieste nei CSV di input
+
+Ogni CSV deve contenere (nomi alternativi accettati, case-insensitive):
+
+| Colonna | Alias accettati |
+|---|---|
+| Keyword | `keyword`, `parola chiave`, `keywords`, `kw` |
+| Position | `position`, `posizione`, `pos` |
+| Search Volume | `search volume`, `volume`, `volume di ricerca`, `searches`, `sv` |
+| URL | `url`, `landing page`, `pagina di destinazione`, `search result` |
+
+Lo script verifica queste colonne **file per file**: se in un CSV mancano, quel singolo file viene **saltato** (loggato con `⚠ Colonne mancanti (...)`) mentre gli altri file proseguono — non è un errore bloccante per l'intera run. Dopo l'elaborazione, controlla sempre il log e segnala all'utente eventuali file saltati per colonne mancanti o CSV non parsabile.
+
+## Nome file atteso
+
+Lo script riconosce solo file che rispettano il pattern di export Semrush:
+
+```
+[brand]-organic.Positions-[cc]-[YYYYMMDD][suffisso opzionale].csv
+```
+Esempio: `falconeri.com-organic.Positions-it-20260615-2026-06-15T08_02_07Z.csv`
+
+File con nome diverso vengono ignorati (loggati con `⏭ Ignorato (pattern non riconosciuto)`) — se l'utente carica CSV con nomi diversi, chiedi di rinominarli secondo questo pattern oppure indicane tu tu stesso brand/mercato/data se l'utente te li fornisce a voce (in tal caso rinomina i file scaricati prima di lanciare lo script, non modificare lo script per aggirare il pattern).
+
+## Flusso di pulizia
+
+### Step 1 — Raccogli CSV e parametri
+Salva i CSV caricati dall'utente in `work/input/` (uno o più file, anche di brand/mercati diversi: vengono elaborati insieme in un'unica run). Chiedi solo i parametri necessari alla richiesta specifica:
+
+- **Raggruppamento**: `consolidato` (un foglio per brand+mercato, default) oppure `per-data` (un foglio separato per ogni data di export)
+- **Tipo query**: `tutte` (default), `brand` (solo keyword classificate come brand), `not-brand` (solo keyword NON brand)
+- **URL da escludere**: sottostringhe URL da scartare a priori (es. pagine di test, categorie irrilevanti)
+- **URL di confronto**: sottostringhe URL usate solo in fase di deduplicazione per non fondere righe della stessa keyword/data che puntano a landing page "concorrenti" tra loro (es. dominio brand vs dominio outlet) — non diventano una colonna nell'output, servono solo a mantenere separate le righe quando serve confrontare due URL sulla stessa keyword.
+
+### Step 2 — Conferma il nome brand rilevato
+```bash
+python work/scripts/semrush_cleaner.py --mode detect-brand --input-dir work/input
+```
+Per ogni brand distinto rilevato (log `🏷 Brand rilevato: '...' (chiave: ...) — N file`) chiedi conferma all'utente, es.: *"Ho rilevato il brand 'Yamamay' dal nome dei file. È corretto?"* (Sì / No + nome corretto). Se corregge, annota la coppia `chiave=NomeCorretto` (la chiave è quella tra parentesi nel log).
+
+### Step 3 — Conferma le varianti/misspelling del brand confermato
+```bash
+python work/scripts/semrush_cleaner.py --mode detect-varianti --input-dir work/input --brand-nome-override "chiave=NomeCorretto"
+```
+(ometti `--brand-nome-override` se il nome non è stato corretto allo Step 2). Presenta le varianti auto-rilevate per ogni brand (log `🏷 Brand '...': varianti auto-rilevate: ...`, typo a distanza di Levenshtein 1-2 dal nome brand) e chiedi conferma, es.: *"Ho rilevato queste varianti/misspelling: iamamai, jamamai, yamaha, ... Sono corrette?"* (Sì / No + lista corretta). Se non viene rilevata nessuna variante aggiuntiva, salta questa conferma.
+
+- Se conferma: nessun parametro aggiuntivo, verrà ricalcolata automaticamente allo Step 4.
+- Se corregge: passa allo Step 4 `--brand-varianti "lista corretta separata da virgola"` insieme a `--salta-rilevamento-varianti` (disattiva il ricalcolo automatico e usa solo la lista fornita).
+
+### Step 4 — Esegui la pulizia
+```bash
+python work/scripts/semrush_cleaner.py \
+  --mode clean \
+  --input-dir work/input \
+  --output work/output/Report.xlsx \
+  --raggruppamento consolidato \
+  --tipo-query tutte \
+  --brand-nome-override "" \
+  --brand-varianti "" \
+  --url-esclusi "" \
+  --url-confronto ""
+```
+Ometti `--brand-nome-override` e/o `--brand-varianti --salta-rilevamento-varianti` se non necessari (nome/varianti confermati così com'erano agli Step 2-3).
+
+Lo script stampa un log dettagliato (file letti, righe valide/scartate per file, varianti brand auto-rilevate, deduplicazione per gruppo, fogli creati) e produce un `.xlsx` con:
+- foglio **"Tutti i Dati"** con tutte le righe deduplicate, colonna **"Brand"** (nome brand rilevato dal file) e colonna **"Brand/Not Brand"** (classificazione automatica)
+- un foglio per ciascun gruppo brand/mercato (o brand/mercato/data se `per-data`)
+- foglio **"LOG"** in fondo con la cronologia dell'elaborazione, incluse le varianti/misspelling auto-rilevate per ogni brand
+
+### Step 5 — Presenta il risultato
+Fornisci sempre all'utente il file `.xlsx` generato come download. Presenta anche una mini tabella di riepilogo letta dal log dello script:
+
+```
+📊 Riepilogo pulizia
+
+| Metrica                  | Valore |
+|---------------------------|--------|
+| File CSV elaborati        | ...    |
+| File saltati (pattern/colonne) | ... |
+| Gruppi (fogli) creati      | ...    |
+| Righe totali (dopo dedup)  | ...    |
+| Varianti brand auto-rilevate | ... |
+```
+
+Se ci sono stati file saltati (pattern non riconosciuto o colonne mancanti), elencali sempre esplicitamente all'utente, non limitarti al conteggio. Elenca sempre anche le varianti/misspelling auto-rilevate per ogni brand (riga di log `🏷 Brand '...': varianti auto-rilevate: ...`), così l'utente può verificare che siano corrette prima di fidarsi della colonna Brand/Not Brand.
+
+### Step 6 — Varianti di brand mancanti (opzionale)
+Se l'utente chiede di individuare varianti di brand non ancora note (typo, sotto-domini, brand line) nei CSV caricati:
+
+```bash
+python work/scripts/semrush_cleaner.py \
+  --mode find-missing-brands \
+  --input-dir work/input \
+  --brand-varianti "falconeri, falco neri"
+```
+
+Presenta la lista trovata all'utente in formato leggibile. Ricorda che il confronto è per token (parole singole ≥4 caratteri) via distanza di Levenshtein 1-2 dal nome brand noto, quindi varianti multi-parola molto diverse dal nome brand potrebbero non emergere: se l'utente sospetta una variante specifica non rilevata, verificala a mano leggendo le keyword del CSV.
+
+## Migliorie allo script o a queste istruzioni (solo se durante la sessione modifichi la logica)
+
+Se l'utente ti chiede di correggere un bug o aggiungere una funzionalità, modifica `work/scripts/semrush_cleaner.py` (logica di pulizia) e/o `work/INSTRUCTIONS.md` (comportamento della skill) e verifica la modifica rieseguendola sui CSV della sessione prima di proporre qualunque commit.
+
+- Se `WRITE_ACCESS` è `False`: dì esplicitamente *"Questa modifica resta solo in questa sessione. Per renderla permanente per tutto il team, va committata nel repo GitHub da qualcuno con accesso in scrittura."* Non tentare di fare push al repo.
+- Se `WRITE_ACCESS` è `True`: chiedi *"Vuoi che committi questa modifica nel repo GitHub per renderla permanente per tutto il team?"* Se conferma, chiedi anche *"Come ti chiami? Lo metto nel messaggio di commit."* e committa il file modificato con la procedura sotto, con messaggio tipo `Fix/Aggiungi [breve descrizione] — via [nome]`.
+
+### Come committare la modifica nel repo (solo se `WRITE_ACCESS` è `True`)
+
+Committa **solo** il file effettivamente modificato (`scripts/semrush_cleaner.py` o `claude-skill/INSTRUCTIONS.md`) — mai altri file, e in particolare **mai** `Codice.gs` (codice della versione Google Sheets, non va toccato da questa skill) né `claude-skill/SKILL.md` (è personalizzato per collega con il relativo token: sovrascriverlo romperebbe le copie di tutti).
+
+```bash
+NOME_COLLEGA="Mario Rossi"                       # nome fornito dall'utente in questa sessione
+FILE_MODIFICATO="scripts/semrush_cleaner.py"     # oppure "claude-skill/INSTRUCTIONS.md"
+MSG="Fix parsing volume con separatore migliaia — via $NOME_COLLEGA"
+
+python3 - "$MSG" "$FILE_MODIFICATO" <<'PYEOF'
+import sys, json, base64, urllib.request, urllib.error, os
+
+message = sys.argv[1]
+file_path = sys.argv[2]
+repo = os.environ["REPO"]
+branch = os.environ.get("BRANCH", "main")
+token = os.environ["GITHUB_TOKEN"]
+local_path = f"work/{file_path}"
+
+req = urllib.request.Request(
+    f"https://api.github.com/repos/{repo}/contents/{file_path}?ref={branch}",
+    headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
+)
+current = json.load(urllib.request.urlopen(req))
+sha = current["sha"]
+
+with open(local_path, "rb") as fh:
+    content_b64 = base64.b64encode(fh.read()).decode()
+
+payload = json.dumps({
+    "message": message,
+    "content": content_b64,
+    "sha": sha,
+    "branch": branch,
+}).encode()
+
+req = urllib.request.Request(
+    f"https://api.github.com/repos/{repo}/contents/{file_path}",
+    data=payload,
+    method="PUT",
+    headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
+)
+try:
+    result = json.load(urllib.request.urlopen(req))
+    print("OK — commit:", result["commit"]["sha"])
+except urllib.error.HTTPError as e:
+    print("ERRORE", e.code, e.read().decode())
+PYEOF
+```
+
+Se l'output è `ERRORE 409`, qualcun altro ha modificato il file nel frattempo: rifai il fetch, riapplica sopra la versione aggiornata la stessa modifica e ritenta una sola volta. Per qualunque altro errore mostralo all'utente invece di dare per scontato che il commit sia andato a buon fine.
+
+## Limiti noti di questa modalità
+
+- **Scrittura condizionata dal token**: con un token in sola lettura, le modifiche proposte in sessione restano locali alla sandbox. Con un token in lettura/scrittura, la skill può committarle direttamente — sempre dietro conferma esplicita dell'utente e richiesta del nome da inserire nel messaggio di commit.
+- Nessuna persistenza tra conversazioni diverse: l'utente deve ricaricare i CSV a ogni nuova sessione.
+- Su un numero molto elevato di CSV/righe, valuta di suddividere il lavoro in più run (es. per brand) per stare dentro ai limiti di tempo/esecuzione della sandbox.
+- Se il fetch da GitHub fallisce (token scaduto, rate limit, repo rinominato), fermati e segnalalo all'utente invece di procedere con una versione non verificata di script o istruzioni.
+- Questa skill non crea né modifica Google Sheets/Drive: produce solo un file `.xlsx` scaricabile. Per l'integrazione diretta con una cartella Drive e il menu di Google Sheets, usa `Codice.gs` (vedi README del repo).
