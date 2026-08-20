@@ -1,6 +1,6 @@
 # Istruzioni operative — SEMrush Keyword Cleaner (Claude Skill)
 
-Questo file viene scaricato a inizio sessione da `claude-skill/SKILL.md` insieme a `scripts/semrush_cleaner.py`: è la **fonte di verità** per il comportamento della skill. Le variabili d'ambiente `$GITHUB_TOKEN`, `$REPO`, `$BRANCH`, `$WRITE_ACCESS` sono già impostate dal fetch iniziale e restano valide per tutta la sessione.
+Questo file viene scaricato a inizio sessione da `claude-skill/SKILL.md` insieme a `scripts/semrush_cleaner.py`, dal repo pubblico `https://github.com/webanalytics-filoblu/public-claude-semrush-keyword-cleaner`: è la **fonte di verità** per il comportamento della skill. Le variabili d'ambiente `$REPO` e `$BRANCH` sono già impostate dal fetch iniziale e restano valide per tutta la sessione.
 
 Questo progetto esiste anche come **Google Apps Script legato a un Google Sheet** (`Codice.gs`, foglio "Configurazione" + cartella Drive) per chi preferisce lavorare dentro Google Sheets/Drive. Questa skill è un percorso alternativo pensato per chi vuole lo stesso risultato direttamente in chat, senza creare fogli Google né usare una cartella Drive: i CSV si caricano nella conversazione e il file pulito torna come download.
 
@@ -110,67 +110,14 @@ Presenta la lista trovata all'utente in formato leggibile. Ricorda che il confro
 
 ## Migliorie allo script o a queste istruzioni (solo se durante la sessione modifichi la logica)
 
-Se l'utente ti chiede di correggere un bug o aggiungere una funzionalità, modifica `work/scripts/semrush_cleaner.py` (logica di pulizia) e/o `work/INSTRUCTIONS.md` (comportamento della skill) e verifica la modifica rieseguendola sui CSV della sessione prima di proporre qualunque commit.
+Se l'utente ti chiede di correggere un bug o aggiungere una funzionalità, modifica `work/scripts/semrush_cleaner.py` (logica di pulizia) e/o `work/INSTRUCTIONS.md` (comportamento della skill) e verifica la modifica rieseguendola sui CSV della sessione prima di dire che è pronta.
 
-- Se `WRITE_ACCESS` è `False`: dì esplicitamente *"Questa modifica resta solo in questa sessione. Per renderla permanente per tutto il team, va committata nel repo GitHub da qualcuno con accesso in scrittura."* Non tentare di fare push al repo.
-- Se `WRITE_ACCESS` è `True`: chiedi *"Vuoi che committi questa modifica nel repo GitHub per renderla permanente per tutto il team?"* Se conferma, chiedi anche *"Come ti chiami? Lo metto nel messaggio di commit."* e committa il file modificato con la procedura sotto, con messaggio tipo `Fix/Aggiungi [breve descrizione] — via [nome]`.
-
-### Come committare la modifica nel repo (solo se `WRITE_ACCESS` è `True`)
-
-Committa **solo** il file effettivamente modificato (`scripts/semrush_cleaner.py` o `claude-skill/INSTRUCTIONS.md`) — mai altri file, e in particolare **mai** `Codice.gs` (codice della versione Google Sheets, non va toccato da questa skill) né `claude-skill/SKILL.md` (è personalizzato per collega con il relativo token: sovrascriverlo romperebbe le copie di tutti).
-
-```bash
-NOME_COLLEGA="Mario Rossi"                       # nome fornito dall'utente in questa sessione
-FILE_MODIFICATO="scripts/semrush_cleaner.py"     # oppure "claude-skill/INSTRUCTIONS.md"
-MSG="Fix parsing volume con separatore migliaia — via $NOME_COLLEGA"
-
-python3 - "$MSG" "$FILE_MODIFICATO" <<'PYEOF'
-import sys, json, base64, urllib.request, urllib.error, os
-
-message = sys.argv[1]
-file_path = sys.argv[2]
-repo = os.environ["REPO"]
-branch = os.environ.get("BRANCH", "main")
-token = os.environ["GITHUB_TOKEN"]
-local_path = f"work/{file_path}"
-
-req = urllib.request.Request(
-    f"https://api.github.com/repos/{repo}/contents/{file_path}?ref={branch}",
-    headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
-)
-current = json.load(urllib.request.urlopen(req))
-sha = current["sha"]
-
-with open(local_path, "rb") as fh:
-    content_b64 = base64.b64encode(fh.read()).decode()
-
-payload = json.dumps({
-    "message": message,
-    "content": content_b64,
-    "sha": sha,
-    "branch": branch,
-}).encode()
-
-req = urllib.request.Request(
-    f"https://api.github.com/repos/{repo}/contents/{file_path}",
-    data=payload,
-    method="PUT",
-    headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
-)
-try:
-    result = json.load(urllib.request.urlopen(req))
-    print("OK — commit:", result["commit"]["sha"])
-except urllib.error.HTTPError as e:
-    print("ERRORE", e.code, e.read().decode())
-PYEOF
-```
-
-Se l'output è `ERRORE 409`, qualcun altro ha modificato il file nel frattempo: rifai il fetch, riapplica sopra la versione aggiornata la stessa modifica e ritenta una sola volta. Per qualunque altro errore mostralo all'utente invece di dare per scontato che il commit sia andato a buon fine.
+Questa skill non ha accesso in scrittura al repo GitHub (è pubblico e il fetch non usa nessuna credenziale): la modifica resta **locale a questa sessione**. Dillo esplicitamente all'utente: *"Questa modifica resta solo in questa sessione. Per renderla permanente per tutto il team, va aperta una modifica/PR sul repo pubblico `webanalytics-filoblu/public-claude-semrush-keyword-cleaner` da qualcuno con accesso al repo (es. modificando il file direttamente su GitHub, o via Claude Code)."* Non tentare di fare push o commit al repo da questa sessione.
 
 ## Limiti noti di questa modalità
 
-- **Scrittura condizionata dal token**: con un token in sola lettura, le modifiche proposte in sessione restano locali alla sandbox. Con un token in lettura/scrittura, la skill può committarle direttamente — sempre dietro conferma esplicita dell'utente e richiesta del nome da inserire nel messaggio di commit.
+- **Nessuna scrittura sul repo**: le modifiche proposte in sessione (bugfix, nuove opzioni) restano nella sandbox e vanno riportate a mano nel repo pubblico da chi ha accesso, se si vuole renderle permanenti.
 - Nessuna persistenza tra conversazioni diverse: l'utente deve ricaricare i CSV a ogni nuova sessione.
 - Su un numero molto elevato di CSV/righe, valuta di suddividere il lavoro in più run (es. per brand) per stare dentro ai limiti di tempo/esecuzione della sandbox.
-- Se il fetch da GitHub fallisce (token scaduto, rate limit, repo rinominato), fermati e segnalalo all'utente invece di procedere con una versione non verificata di script o istruzioni.
-- Questa skill non crea né modifica Google Sheets/Drive: produce solo un file `.xlsx` scaricabile. Per l'integrazione diretta con una cartella Drive e il menu di Google Sheets, usa `Codice.gs` (vedi README del repo).
+- Se il fetch da GitHub fallisce (rate limit, repo/branch rinominato, path errato), fermati e segnalalo all'utente invece di procedere con una versione non verificata di script o istruzioni.
+- Questa skill non crea né modifica Google Sheets/Drive: produce solo un file `.xlsx` scaricabile, fornito come download in chat. Per l'integrazione diretta con una cartella Drive e il menu di Google Sheets, usa `Codice.gs` (vedi README del repo).
