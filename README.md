@@ -15,7 +15,7 @@ Esempio in xlsx caricato come "SEMrush Keyword Cleaner - Configurable Master Lau
 `scripts/semrush_cleaner.py` è un porting Python della stessa logica (parsing nome file, filtri, dedup, raggruppamento), pensato per girare in chat: i CSV si caricano direttamente nella conversazione e il risultato torna come file `.xlsx` scaricabile.
 
 - **Claude Code (locale)**: apri il repo in VS Code, avvia Claude Code e usa `/pulisci-keyword` (vedi `.claude/commands/pulisci-keyword.md` e `CLAUDE.md`). Richiede `pip install -r requirements.txt`.
-- **claude.ai (skill)**: `claude-skill/SKILL.md` è una Skill che scarica sempre l'ultima versione di `scripts/semrush_cleaner.py` da questo repo GitHub a inizio sessione (non porta con sé il codice), così tutti i membri del team usano sempre la versione più aggiornata. Ogni copia di `SKILL.md` va personalizzata con il token GitHub del collega che la userà (vedi Step 0 nel file) — non condividere la propria copia con token incluso.
+- **claude.ai (skill)**: `claude-skill/SKILL.md` è una Skill che scarica sempre l'ultima versione di `scripts/semrush_cleaner.py` da questo repo GitHub pubblico a inizio sessione (non porta con sé il codice), così tutti i membri del team usano sempre la versione più aggiornata. Il repo è pubblico, quindi il fetch non richiede nessun token: `SKILL.md` è identica per tutti i colleghi e può essere condivisa liberamente.
 
 Le due implementazioni (Apps Script e Python) sono mantenute allineate a mano: un fix o una nuova funzionalità andrebbero applicati a entrambe se rilevanti.
 
