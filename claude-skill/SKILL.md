@@ -21,6 +21,9 @@ mkdir -p work/scripts
 curl -sL "https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/semrush_cleaner.py" \
   -o work/scripts/semrush_cleaner.py
 
+curl -sL "https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/extract_zip.py" \
+  -o work/scripts/extract_zip.py
+
 curl -sL "https://raw.githubusercontent.com/$REPO/$BRANCH/claude-skill/INSTRUCTIONS.md" \
   -o work/INSTRUCTIONS.md
 
@@ -30,9 +33,10 @@ pip install -q openpyxl
 Verifica prima di proseguire, senza dare per scontato che il fetch sia andato a buon fine:
 
 - `work/scripts/semrush_cleaner.py` deve iniziare con `#!/usr/bin/env python3`
+- `work/scripts/extract_zip.py` deve iniziare con `#!/usr/bin/env python3`
 - `work/INSTRUCTIONS.md` deve iniziare con `#`
 
-Se uno dei due file contiene invece un messaggio di errore (404, rate limit, path errato) o non rispetta questo formato, mostra l'errore all'utente invece di continuare.
+Se uno dei tre file contiene invece un messaggio di errore (404, rate limit, path errato) o non rispetta questo formato, mostra l'errore all'utente invece di continuare.
 
 ## Step 1 — Segui `work/INSTRUCTIONS.md`
 

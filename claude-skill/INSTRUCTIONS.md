@@ -2,7 +2,7 @@
 
 Questo file viene scaricato a inizio sessione da `claude-skill/SKILL.md` insieme a `scripts/semrush_cleaner.py`, dal repo pubblico `https://github.com/webanalytics-filoblu/public-claude-semrush-keyword-cleaner`: è la **fonte di verità** per il comportamento della skill. Le variabili d'ambiente `$REPO` e `$BRANCH` sono già impostate dal fetch iniziale e restano valide per tutta la sessione.
 
-Questo progetto esiste anche come **Google Apps Script legato a un Google Sheet** (`Codice.gs`, foglio "Configurazione" + cartella Drive) per chi preferisce lavorare dentro Google Sheets/Drive. Questa skill è un percorso alternativo pensato per chi vuole lo stesso risultato direttamente in chat, senza creare fogli Google né usare una cartella Drive: i CSV si caricano nella conversazione e il file pulito torna come download.
+Questo progetto esiste anche come **Google Apps Script legato a un Google Sheet** (`Codice.gs`, foglio "Configurazione" + cartella Drive) per chi preferisce lavorare dentro Google Sheets/Drive. Questa skill è un percorso alternativo pensato per chi vuole lo stesso risultato direttamente in chat, senza creare fogli Google né usare una cartella Drive: i CSV si caricano nella conversazione (uno per uno, o tutti insieme in un unico `.zip` — vedi Step 1) e il file pulito torna come download.
 
 ## Come ti comporti
 
@@ -37,7 +37,19 @@ File con nome diverso vengono ignorati (loggati con `⏭ Ignorato (pattern non r
 ## Flusso di pulizia
 
 ### Step 1 — Raccogli CSV e parametri
-Salva i CSV caricati dall'utente in `work/input/` (uno o più file, anche di brand/mercati diversi: vengono elaborati insieme in un'unica run). Chiedi solo i parametri necessari alla richiesta specifica:
+Salva i CSV caricati dall'utente in `work/input/` (uno o più file, anche di brand/mercati diversi: vengono elaborati insieme in un'unica run).
+
+**Se l'utente allega direttamente uno o più file `.csv`**: nessun passaggio aggiuntivo, sono già testo in chat — salvali in `work/input/` come sempre.
+
+**Se l'utente allega invece un unico `.zip` contenente tutti i CSV** (comodo quando sono molti, es. più brand/mercati insieme): un archivio non è un formato "documento" che l'ambiente tenta di leggere come testo, quindi in un sandbox con esecuzione di codice (questo lo è: qui girano `pip install`/script Python) l'allegato dovrebbe finire su un percorso reale del filesystem, non nel contesto della conversazione. **Verificalo prima di usarlo** (non è una certezza in ogni sessione): cerca il file sul filesystem locale (es. `ls /mnt/user-data/uploads/` o il path equivalente di questo ambiente) prima di fare qualunque altra cosa.
+- **Se lo trovi lì, integro**: estrailo con
+  ```bash
+  python work/scripts/extract_zip.py --zip "<path del file allegato>" --output-dir work/input
+  ```
+  Si ferma con errore esplicito (senza estrarre nulla) se lo zip non è valido o se un file interno ha un CRC non valido — in quel caso l'upload è arrivato incompleto: chiedi all'utente di ricaricarlo. Se va a buon fine, appiattisce automaticamente eventuali sottocartelle e scarta i metadati che macOS aggiunge comprimendo una cartella (`__MACOSX/`, `._*`, `.DS_Store`), così `work/input/` contiene solo i CSV veri, pronti per gli step successivi.
+- **Se invece non trovi alcun file** (il contenuto ti è arrivato solo come testo/base64 nella conversazione): l'ipotesi non vale in questa sessione. Chiedi all'utente di allegare i CSV singolarmente (non zippati) invece di tentare di ricostruire lo zip a mano dal testo in chat — rischio di troncamento silenzioso, un archivio corrotto è più difficile da diagnosticare di un CSV troncato.
+
+Chiedi solo i parametri necessari alla richiesta specifica:
 
 - **Raggruppamento**: `consolidato` (un foglio per brand+mercato, default) oppure `per-data` (un foglio separato per ogni data di export)
 - **Tipo query**: `tutte` (default), `brand` (solo keyword classificate come brand), `not-brand` (solo keyword NON brand)
@@ -121,3 +133,4 @@ Questa skill non ha accesso in scrittura al repo GitHub (è pubblico e il fetch 
 - Su un numero molto elevato di CSV/righe, valuta di suddividere il lavoro in più run (es. per brand) per stare dentro ai limiti di tempo/esecuzione della sandbox.
 - Se il fetch da GitHub fallisce (rate limit, repo/branch rinominato, path errato), fermati e segnalalo all'utente invece di procedere con una versione non verificata di script o istruzioni.
 - Questa skill non crea né modifica Google Sheets/Drive: produce solo un file `.xlsx` scaricabile, fornito come download in chat. Per l'integrazione diretta con una cartella Drive e il menu di Google Sheets, usa `Codice.gs` (vedi README del repo).
+- **Il canale "zip allegato in chat" (Step 1) non è verificato in modo esaustivo**: si basa sull'osservazione che questo sandbox esegue codice, non su una conferma diretta che ogni allegato zip finisca sempre su un percorso reale del filesystem in ogni sessione/versione dell'ambiente. Verificalo ad ogni run invece di darlo per scontato; se non funziona, i CSV singoli restano l'opzione già sempre valida.
